@@ -2,11 +2,11 @@
 * { box-sizing:border-box; }
 body { margin:0; color:#18243a; background:var(--bg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
 a { color:inherit; text-decoration:none; }
-.topbar { height:64px; display:flex; align-items:center; padding:0 24px; color:white; background:linear-gradient(90deg,#fff 0%,#1769e5 100%); box-shadow:0 2px 12px #123f7c33; }
+.topbar { height:64px; display:flex; align-items:center; padding:0 24px; color:white; background:linear-gradient(90deg,#fff 0 145px,#dbeafe 156px,#4b91ec 174px,#1769e5 188px,#0d4fae 360px,#0a3b82 100%); box-shadow:0 2px 12px #123f7c33; }
 .brand { display:flex; align-items:center; gap:12px; font-size:16px; font-weight:700; letter-spacing:.3px; }
 .brand-logo { display:flex; align-items:center; height:38px; padding:5px 8px; background:transparent; }
 .brand-logo img { display:block; width:132px; height:auto; }
-.brand-title { color:white; background:transparent; -webkit-text-stroke:1px #111; paint-order:stroke fill; text-shadow:0 1px 1px #0003; white-space:nowrap; }
+.brand-title { color:white; background:transparent; text-shadow:0 1px 2px #06346b33; white-space:nowrap; }
 .topbar nav { margin-left:auto; display:flex; gap:26px; }
 .topbar nav a { color:#dceaff; font-size:14px; }
 .shell { width:min(1180px,calc(100% - 40px)); margin:36px auto 60px; }
