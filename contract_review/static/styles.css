@@ -2,7 +2,7 @@
 * { box-sizing:border-box; }
 body { margin:0; color:#18243a; background:var(--bg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
 a { color:inherit; text-decoration:none; }
-.topbar { height:64px; display:flex; align-items:center; padding:0 24px; color:white; background:linear-gradient(90deg,#fff 0,#f2f7fe 12px,#d6e7fb 26px,#a9cdf5 40px,#73a9ec 54px,#4789e1 68px,#347bd8 100px,#2d74d2 160px,#286fce 42%,#2066c3 72%,#195db7 84%,#1455aa 91%,#104e9f 100%); box-shadow:0 2px 12px #123f7c33; }
+.topbar { height:64px; display:flex; align-items:center; padding:0 24px; color:white; background:linear-gradient(90deg,#fff 0,#f6f9ff 32px,#e5effc 68px,#c5dcf9 110px,#91baf1 160px,#659fe9 220px,#4789e1 320px,#347bd8 440px,#286fce 58%,#2066c3 72%,#195db7 84%,#1455aa 91%,#104e9f 100%); box-shadow:0 2px 12px #123f7c33; }
 .brand { display:flex; align-items:center; gap:8px; font-size:16px; font-weight:700; letter-spacing:.3px; }
 .brand-logo { display:flex; flex:0 0 40px; align-items:center; width:40px; height:38px; overflow:hidden; background:transparent; }
 .brand-logo img { display:block; flex:none; width:132px; max-width:none; height:auto; }
