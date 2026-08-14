@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>合同对比</title><link rel="stylesheet" href="styles.css?v=20260813-6"></head>
+<body><header class="topbar"><a class="brand" href="./">合同对比与金额审核系统</a><nav><a href="comparison.html">合同对比</a><a href="amount-review.html">金额审核</a></nav></header>
+<main class="shell"><div class="page-title"><h1>合同对比</h1><p>先自动配对，再确认提交。开发环境使用 TextIn 模拟适配器。</p></div><section class="panel"><h2>选择文件</h2><div class="upload-grid">
+<div class="dropzone" id="word-zone"><strong>定稿 Word 合同</strong><span class="hint">选择多份文件、文件夹或拖拽上传</span><input id="words" type="file" accept=".docx" multiple><label class="btn secondary folder-button" onclick="event.stopPropagation()">选择文件夹<input id="word-folder" type="file" accept=".docx" multiple webkitdirectory></label><div class="file-list" id="word-list"></div></div>
+<div class="dropzone" id="pdf-zone"><strong>盖章扫描 PDF</strong><span class="hint">请选择纯扫描图片型 PDF</span><input id="pdfs" type="file" accept=".pdf" multiple><label class="btn secondary folder-button" onclick="event.stopPropagation()">选择文件夹<input id="pdf-folder" type="file" accept=".pdf" multiple webkitdirectory></label><div class="file-list" id="pdf-list"></div></div>
+</div><div class="ignore-options"><div class="option-heading"><strong>忽略选项</strong><span>开启后，对应内容不参与差异判断</span></div><div class="switch-grid">
+<label class="switch-item"><span>忽略批注</span><input type="checkbox" data-ignore="comments"><i></i></label>
+<label class="switch-item"><span>忽略页眉页脚（含页码）</span><input type="checkbox" data-ignore="headerfooter" checked><i></i></label>
+<label class="switch-item"><span>忽略印章</span><input type="checkbox" data-ignore="stamp"><i></i></label>
+<label class="switch-item"><span>忽略标点符号</span><input type="checkbox" data-ignore="symbols" checked><i></i></label>
+<label class="switch-item"><span>忽略水印</span><input type="checkbox" data-ignore="watermark" checked><i></i></label>
+</div></div><div id="message" class="message"></div><div class="actions"><button class="btn secondary" id="pair" disabled>生成配对清单</button></div><div id="pairs" class="pair-list"></div></section><section class="panel"><h2>对比历史</h2><div id="history" class="empty">正在加载…</div></section></main><div class="preview-modal" id="modal"><button class="btn danger close" onclick="closePreview()">关闭预览</button><iframe id="preview"></iframe></div><script src="common.js?v=20260813-4"></script><script src="comparison.js?v=20260813-4"></script></body></html>

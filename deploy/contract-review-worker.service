@@ -1,0 +1,18 @@
+[Unit]
+Description=Contract Review Worker
+After=network.target contract-review-web.service
+
+[Service]
+Type=simple
+User=contract-review
+WorkingDirectory=/opt/contract-review
+EnvironmentFile=/etc/contract-review.env
+ExecStart=/opt/contract-review/.venv/bin/python -m contract_review.worker
+Restart=on-failure
+RestartSec=3
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+
