@@ -4,9 +4,8 @@ body { margin:0; color:#18243a; background:var(--bg); font-family:-apple-system,
 a { color:inherit; text-decoration:none; }
 .topbar { height:64px; display:flex; align-items:center; padding:0 24px; color:white; background:linear-gradient(90deg,#fff 0,#f6f9ff 32px,#e5effc 68px,#c5dcf9 110px,#91baf1 160px,#659fe9 220px,#4789e1 320px,#347bd8 440px,#286fce 58%,#2066c3 72%,#195db7 84%,#1455aa 91%,#104e9f 100%); box-shadow:0 2px 12px #123f7c33; }
 .brand { display:flex; align-items:center; gap:12px; font-size:16px; font-weight:700; letter-spacing:.3px; }
-.brand-logo { position:relative; display:flex; align-items:center; height:38px; padding:5px 8px; background:transparent; }
-.brand-logo img { display:block; width:132px; height:auto; opacity:.78; }
-.brand-logo::after { position:absolute; top:0; bottom:0; left:8px; width:39px; content:""; pointer-events:none; background:url("npa-logo.png") left center/132px auto no-repeat; }
+.brand-logo { display:flex; align-items:center; height:38px; padding:5px 8px; background:transparent; }
+.brand-logo img { display:block; width:132px; height:auto; }
 .brand-title { color:white; background:transparent; text-shadow:0 1px 2px #06346b33; white-space:nowrap; }
 .topbar nav { margin-left:auto; display:flex; gap:26px; }
 .topbar nav a { color:#dceaff; font-size:14px; }
