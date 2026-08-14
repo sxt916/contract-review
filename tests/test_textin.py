@@ -33,7 +33,7 @@ def test_create_uses_documented_v3_payload(tmp_path, monkeypatch):
     }
     assert captured["json"]["config"] == {
         "use_pdf_parser": "false",
-        "remove_watermark": "true",
+        "remove_watermark": "false",
     }
     assert captured["json"]["standard_doc"][0]["filename"] == word.name
     assert captured["json"]["compare_doc"][0]["filename"] == pdf.name
