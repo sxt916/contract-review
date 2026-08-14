@@ -215,11 +215,49 @@ async def create_comparisons(
 
 
 @router.get("/comparisons")
-def list_comparisons(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
+def list_comparisons(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    filename: str | None = Query(None, max_length=180),
+    status: str | None = Query(None, max_length=30),
+    date_from: str | None = Query(None, max_length=30),
+    date_to: str | None = Query(None, max_length=30),
+    task_ids: str | None = Query(None, max_length=4000),
+):
     offset = (page - 1) * page_size
+    conditions: list[str] = []
+    params: list[object] = []
+    if filename:
+        conditions.append("(word_filename LIKE ? OR pdf_filename LIKE ?)")
+        keyword = f"%{filename.strip()}%"
+        params.extend((keyword, keyword))
+    if status:
+        allowed_statuses = {"queued", "submitting", "processing", "completed", "failed"}
+        if status not in allowed_statuses:
+            raise HTTPException(400, "处理进度筛选值无效")
+        conditions.append("status = ?")
+        params.append(status)
+    if date_from:
+        conditions.append("created_at >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("created_at < datetime(?, '+1 day')")
+        params.append(date_to)
+    if task_ids is not None:
+        ids = [value for value in task_ids.split(",") if value]
+        if not ids:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+        if len(ids) > 100 or any(not re.fullmatch(r"[0-9a-fA-F-]{36}", value) for value in ids):
+            raise HTTPException(400, "任务 ID 筛选值无效")
+        conditions.append(f"id IN ({','.join('?' for _ in ids)})")
+        params.extend(ids)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     with connection() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM comparison_submissions").fetchone()[0]
-        rows = conn.execute("SELECT * FROM comparison_submissions ORDER BY created_at DESC LIMIT ? OFFSET ?", (page_size, offset)).fetchall()
+        total = conn.execute(f"SELECT COUNT(*) FROM comparison_submissions{where}", params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM comparison_submissions{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            [*params, page_size, offset],
+        ).fetchall()
     return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": page_size}
 
 

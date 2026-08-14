@@ -66,6 +66,12 @@ def test_comparison_mock_end_to_end(tmp_path, monkeypatch):
         assert run_once()
         task = client.get("/api/comparisons").json()["items"][0]
         assert task["status"] == "completed"
+        filtered = client.get("/api/comparisons", params={"filename": "XWZCG-1874", "status": "completed"}).json()
+        assert filtered["total"] == 1
+        assert filtered["items"][0]["id"] == task_id
+        current_batch = client.get("/api/comparisons", params={"task_ids": task_id}).json()
+        assert current_batch["total"] == 1
+        assert client.get("/api/comparisons", params={"status": "unknown"}).status_code == 400
         preview = client.get(f"/api/comparisons/{task_id}/preview")
         assert preview.status_code == 200
         assert "/api/mock-preview/" in preview.json()["preview_url"]
