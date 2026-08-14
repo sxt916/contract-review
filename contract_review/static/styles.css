@@ -4,7 +4,7 @@ body { margin:0; color:#18243a; background:var(--bg); font-family:-apple-system,
 a { color:inherit; text-decoration:none; }
 .topbar { height:64px; display:flex; align-items:center; padding:0 24px; color:white; background:radial-gradient(ellipse at 22% -90%,#ffffff47 0,#ffffff1c 34%,transparent 58%),linear-gradient(105deg,#5597ee 0%,#438bec 20%,#317fe9 43%,#2375e7 67%,#1b6de6 84%,#1769e5 100%); box-shadow:0 2px 12px #123f7c33; }
 .brand { display:flex; align-items:center; gap:8px; font-size:16px; font-weight:700; letter-spacing:.3px; }
-.brand-logo { display:flex; flex:0 0 40px; align-items:center; width:40px; height:38px; overflow:hidden; background:transparent; }
+.brand-logo { display:flex; flex:0 0 38px; align-items:center; width:38px; height:38px; overflow:hidden; background:transparent; }
 .brand-logo img { display:block; flex:none; width:132px; max-width:none; height:auto; }
 .brand-title { color:white; background:transparent; text-shadow:0 1px 3px #083d8566; white-space:nowrap; }
 .topbar nav { margin-left:auto; display:flex; gap:26px; }
