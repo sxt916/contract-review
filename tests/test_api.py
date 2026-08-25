@@ -38,6 +38,41 @@ class _NavLinkParser(HTMLParser):
             self.in_nav = False
 
 
+class _PageLinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.current_href = None
+        self.current_text = []
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self.current_href = dict(attrs).get("href")
+            self.current_text = []
+
+    def handle_data(self, data):
+        if self.current_href is not None:
+            self.current_text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self.current_href is not None:
+            self.links.append((" ".join("".join(self.current_text).split()), self.current_href))
+            self.current_href = None
+
+
+def test_home_page_offers_both_contract_modules():
+    with TestClient(app) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    parser = _PageLinkParser()
+    parser.feed(response.text)
+    links = {href: text for text, href in parser.links}
+    assert set(links) == {"comparison.html", "amount-review.html"}
+    assert "合同对比" in links["comparison.html"]
+    assert "金额审核" in links["amount-review.html"]
+
+
 def test_work_pages_offer_comparison_and_amount_review_navigation():
     expected = [("合同对比", "comparison.html"), ("金额审核", "amount-review.html")]
     with TestClient(app) as client:
