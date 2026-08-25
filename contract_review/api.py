@@ -100,19 +100,34 @@ def textin_status():
 @router.post("/amount-reviews", status_code=202)
 async def create_amount_reviews(files: list[UploadFile] = File(...)):
     settings = get_settings()
-    if not files or len(files) > settings.max_files_per_type:
-        raise HTTPException(400, f"一次须上传 1 至 {settings.max_files_per_type} 份文件")
+    if not files:
+        raise HTTPException(400, "请至少上传 1 份文件")
     stored: list[tuple[Path, str]] = []
+    rejected: list[dict[str, str]] = []
     try:
         for upload in files:
-            stored.append(await _store_upload(upload, ".docx"))
+            original_name = Path(upload.filename or "upload").name
+            if original_name.startswith(".") or original_name.startswith("~$"):
+                continue
+            filename = _safe_name(upload.filename)
+            if len(stored) >= settings.max_files_per_type:
+                rejected.append({"filename": filename, "reason": f"超过一次最多 {settings.max_files_per_type} 份的限制"})
+                continue
+            try:
+                stored.append(await _store_upload(upload, ".docx"))
+            except HTTPException as exc:
+                reason = str(exc.detail)
+                file_prefix = f"文件 {filename} "
+                if reason.startswith(file_prefix):
+                    reason = reason[len(file_prefix):]
+                rejected.append({"filename": filename, "reason": reason})
         tasks = []
         with connection() as conn:
             for path, filename in stored:
                 task_id = str(uuid.uuid4())
                 conn.execute("INSERT INTO amount_review_tasks (id, filename, status, created_at, temp_path) VALUES (?, ?, 'queued', ?, ?)", (task_id, filename, utc_now(), str(path)))
                 tasks.append({"id": task_id, "filename": filename, "status": "queued"})
-        return {"tasks": tasks}
+        return {"tasks": tasks, "rejected": rejected}
     except Exception:
         for path, _ in stored:
             path.unlink(missing_ok=True)

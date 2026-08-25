@@ -1,5 +1,6 @@
 from pathlib import Path
 from html.parser import HTMLParser
+from io import BytesIO
 
 from docx import Document
 from fastapi.testclient import TestClient
@@ -117,6 +118,85 @@ def test_amount_upload_worker_and_delete(tmp_path, monkeypatch):
         assert task["temp_path"] is None
         assert client.delete(f"/api/amount-reviews/{task_id}").status_code == 204
         assert client.delete(f"/api/amount-reviews/{other_task_id}").status_code == 204
+    get_settings.cache_clear()
+
+
+def test_amount_upload_keeps_valid_docx_and_reports_each_rejected_file(tmp_path, monkeypatch):
+    """One invalid upload must not discard valid contracts from the same batch."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    get_settings.cache_clear()
+    init_db()
+    valid = BytesIO()
+    Document().save(valid)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/amount-reviews",
+            files=[
+                ("files", ("有效合同.docx", valid.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
+                ("files", ("报价单.pdf", b"%PDF-invalid", "application/pdf")),
+                ("files", ("损坏合同.docx", b"not-a-word-file", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
+            ],
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert [task["filename"] for task in body["tasks"]] == ["有效合同.docx"]
+        assert [item["filename"] for item in body["rejected"]] == ["报价单.pdf", "损坏合同.docx"]
+        assert "仅支持 .docx" in body["rejected"][0]["reason"]
+        assert "不是有效的 DOCX" in body["rejected"][1]["reason"]
+        assert client.delete(f"/api/amount-reviews/{body['tasks'][0]['id']}").status_code == 204
+    get_settings.cache_clear()
+
+
+def test_amount_upload_accepts_first_ten_valid_files_and_reports_the_rest(tmp_path, monkeypatch):
+    """The eleventh valid contract must be reported instead of failing the whole batch."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    get_settings.cache_clear()
+    init_db()
+    valid = BytesIO()
+    Document().save(valid)
+    files = [
+        ("files", (f"合同{index}.docx", valid.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+        for index in range(1, 12)
+    ]
+
+    with TestClient(app) as client:
+        response = client.post("/api/amount-reviews", files=files)
+
+        assert response.status_code == 202
+        body = response.json()
+        assert len(body["tasks"]) == 10
+        assert body["rejected"] == [{"filename": "合同11.docx", "reason": "超过一次最多 10 份的限制"}]
+        for task in body["tasks"]:
+            assert client.delete(f"/api/amount-reviews/{task['id']}").status_code == 204
+    get_settings.cache_clear()
+
+
+def test_amount_upload_silently_ignores_hidden_and_word_temporary_files(tmp_path, monkeypatch):
+    """Finder metadata and Word lock files must not become tasks or rejections."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    get_settings.cache_clear()
+    init_db()
+    valid = BytesIO()
+    Document().save(valid)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/amount-reviews",
+            files=[
+                ("files", ("有效合同.docx", valid.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")),
+                ("files", (".DS_Store", b"finder", "application/octet-stream")),
+                ("files", ("._合同副本.docx", b"apple-double", "application/octet-stream")),
+                ("files", ("~$有效合同.docx", b"word-lock", "application/octet-stream")),
+            ],
+        )
+
+        assert response.status_code == 202
+        body = response.json()
+        assert [task["filename"] for task in body["tasks"]] == ["有效合同.docx"]
+        assert body["rejected"] == []
+        assert client.delete(f"/api/amount-reviews/{body['tasks'][0]['id']}").status_code == 204
     get_settings.cache_clear()
 
 
