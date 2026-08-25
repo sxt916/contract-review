@@ -165,6 +165,91 @@ def test_total_row_uses_currency_amount_instead_of_tax_rate(tmp_path):
     assert result["summary"]["contract_total"] == "4289.00"
 
 
+def test_total_error_identifies_arabic_total_when_line_sum_matches_uppercase(tmp_path):
+    """Treating the Arabic total as authoritative would blame the correct uppercase amount."""
+    path = tmp_path / "contract.docx"
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "名称"
+    table.rows[0].cells[1].text = "金额（元）"
+    for name, total in [("货物A", "1000.00"), ("货物B", "3289.00")]:
+        cells = table.add_row().cells
+        cells[0].text = name
+        cells[1].text = total
+    cells = table.add_row().cells
+    cells[0].text = "合计"
+    cells[1].text = "人民币【4,239.00】元，大写【肆仟贰佰捌拾玖元整】"
+    doc.save(path)
+
+    result = review_docx(path)
+
+    errors = [error for error in result["errors"] if error["location"] == "合同标的，合计"]
+    assert len(errors) == 1
+    assert errors[0] == {
+        "location": "合同标的，合计",
+        "error_type": "合计金额不一致",
+        "original": "分项合计 4289.00 元；合计栏阿拉伯数字 4239.00 元；中文大写 4289.00 元",
+        "expected": "合计栏阿拉伯数字疑似应为 4289.00 元",
+        "reason": "分项总价之和与中文大写金额一致，合计栏阿拉伯数字与二者不一致",
+    }
+
+
+def test_total_error_identifies_uppercase_when_line_sum_matches_arabic(tmp_path):
+    """Treating every mismatch alike would hide which value disagrees with the other two."""
+    path = tmp_path / "contract.docx"
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "名称"
+    table.rows[0].cells[1].text = "金额（元）"
+    for name, total in [("货物A", "1000.00"), ("货物B", "3239.00")]:
+        cells = table.add_row().cells
+        cells[0].text = name
+        cells[1].text = total
+    cells = table.add_row().cells
+    cells[0].text = "合计"
+    cells[1].text = "人民币【4,239.00】元，大写【肆仟贰佰捌拾玖元整】"
+    doc.save(path)
+
+    result = review_docx(path)
+
+    errors = [error for error in result["errors"] if error["location"] == "合同标的，合计"]
+    assert errors == [{
+        "location": "合同标的，合计",
+        "error_type": "合计金额不一致",
+        "original": "分项合计 4239.00 元；合计栏阿拉伯数字 4239.00 元；中文大写 4289.00 元",
+        "expected": "中文大写金额疑似应对应 4239.00 元",
+        "reason": "分项总价之和与合计栏阿拉伯数字一致，中文大写金额与二者不一致",
+    }]
+
+
+def test_total_error_requests_manual_review_when_all_three_amounts_disagree(tmp_path):
+    """Choosing any value as authoritative is unsafe when all three totals differ."""
+    path = tmp_path / "contract.docx"
+    doc = Document()
+    table = doc.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "名称"
+    table.rows[0].cells[1].text = "金额（元）"
+    for name, total in [("货物A", "1000.00"), ("货物B", "3289.00")]:
+        cells = table.add_row().cells
+        cells[0].text = name
+        cells[1].text = total
+    cells = table.add_row().cells
+    cells[0].text = "合计"
+    cells[1].text = "人民币【4,239.00】元，大写【肆仟元整】"
+    doc.save(path)
+
+    result = review_docx(path)
+
+    errors = [error for error in result["errors"] if error["location"] == "合同标的，合计"]
+    assert errors == [{
+        "location": "合同标的，合计",
+        "error_type": "合计金额不一致",
+        "original": "分项合计 4289.00 元；合计栏阿拉伯数字 4239.00 元；中文大写 4000.00 元",
+        "expected": "三个金额互不一致，请人工核对正确金额",
+        "reason": "分项总价之和、合计栏阿拉伯数字与中文大写金额均不一致，系统无法自动确定正确值",
+    }]
+
+
 def test_standalone_uppercase_mismatch_is_reported(tmp_path):
     """Removing standalone Arabic/uppercase comparison must fail."""
     path = tmp_path / "contract.docx"
@@ -174,7 +259,13 @@ def test_standalone_uppercase_mismatch_is_reported(tmp_path):
 
     result = review_docx(path)
 
-    assert any(error["error_type"] == "中文大写金额不一致" for error in result["errors"])
+    assert result["errors"] == [{
+        "location": "合同正文",
+        "error_type": "金额大小写不一致",
+        "original": "阿拉伯数字 4289.00 元；中文大写 4000.00 元",
+        "expected": "阿拉伯数字与中文大写金额应一致，请人工核对正确金额",
+        "reason": "当前只有阿拉伯数字和中文大写两项依据，系统无法自动确定哪一项正确",
+    }]
 
 
 def test_merged_total_row_text_is_not_repeated_in_error(tmp_path):
@@ -194,9 +285,9 @@ def test_merged_total_row_text_is_not_repeated_in_error(tmp_path):
     doc.save(path)
 
     result = review_docx(path)
-    error = next(error for error in result["errors"] if error["error_type"] == "中文大写金额不一致")
+    error = next(error for error in result["errors"] if error["error_type"] == "合计金额不一致")
 
-    assert error["original"].count("人民币") == 1
+    assert error["original"] == "分项合计 4289.00 元；合计栏阿拉伯数字 4289.00 元；中文大写 4288.00 元"
 
 
 def test_identical_errors_are_deduplicated(tmp_path):
@@ -209,6 +300,6 @@ def test_identical_errors_are_deduplicated(tmp_path):
     doc.save(path)
 
     result = review_docx(path)
-    uppercase_errors = [error for error in result["errors"] if error["error_type"] == "中文大写金额不一致"]
+    uppercase_errors = [error for error in result["errors"] if error["error_type"] == "金额大小写不一致"]
 
     assert len(uppercase_errors) == 1

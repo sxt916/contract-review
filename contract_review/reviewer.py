@@ -16,7 +16,7 @@ from docx.oxml.text.paragraph import CT_P
 
 from .amounts import find_uppercase_amount, money, parse_decimal
 
-PARSER_VERSION = "1.2.0"
+PARSER_VERSION = "1.3.0"
 
 
 @dataclass
@@ -190,7 +190,13 @@ def _payment_amounts(text: str) -> list[Decimal]:
 def _check_uppercase(text: str, arabic: Decimal, location: str, errors: list[ReviewError]) -> None:
     uppercase = find_uppercase_amount(text)
     if uppercase is not None and uppercase != money(arabic):
-        errors.append(ReviewError(location, "中文大写金额不一致", text, f"中文大写应对应 {money(arabic):.2f} 元", "阿拉伯数字金额与同一表达中的中文大写金额不一致"))
+        errors.append(ReviewError(
+            location,
+            "金额大小写不一致",
+            f"阿拉伯数字 {money(arabic):.2f} 元；中文大写 {uppercase:.2f} 元",
+            "阿拉伯数字与中文大写金额应一致，请人工核对正确金额",
+            "当前只有阿拉伯数字和中文大写两项依据，系统无法自动确定哪一项正确",
+        ))
 
 
 def _check_explicit_amount_pairs(text: str, location: str, errors: list[ReviewError]) -> None:
@@ -244,6 +250,9 @@ def review_docx(path: str | Path, filename: str | None = None) -> dict:
     errors: list[ReviewError] = []
     line_totals: list[Decimal] = []
     contract_total: Decimal | None = None
+    contract_total_text: str | None = None
+    contract_total_location = "合同标的，合计"
+    contract_total_uppercase: Decimal | None = None
     current_section = "合同标的"
     checks: list[str] = []
 
@@ -283,7 +292,9 @@ def review_docx(path: str | Path, filename: str | None = None) -> dict:
                 candidates = _currency_amounts(total_text) or _arabic_amounts(total_text)
                 if candidates:
                     contract_total = candidates[0]
-                    _check_uppercase(joined, contract_total, f"{current_section}，合计", errors)
+                    contract_total_text = joined
+                    contract_total_location = f"{current_section}，合计"
+                    contract_total_uppercase = find_uppercase_amount(joined)
                 continue
             if header["total"] >= len(row):
                 continue
@@ -310,7 +321,22 @@ def review_docx(path: str | Path, filename: str | None = None) -> dict:
     if contract_total is not None and line_totals:
         actual = money(sum(line_totals, Decimal("0")))
         checks.append(f"{len(line_totals)} 项分项总价求和 = 合同合计")
-        if actual != contract_total:
+        if contract_total_uppercase is not None and not (actual == contract_total == contract_total_uppercase):
+            original = f"分项合计 {actual:.2f} 元；合计栏阿拉伯数字 {contract_total:.2f} 元；中文大写 {contract_total_uppercase:.2f} 元"
+            if actual == contract_total_uppercase:
+                expected = f"合计栏阿拉伯数字疑似应为 {actual:.2f} 元"
+                reason = "分项总价之和与中文大写金额一致，合计栏阿拉伯数字与二者不一致"
+            elif actual == contract_total:
+                expected = f"中文大写金额疑似应对应 {actual:.2f} 元"
+                reason = "分项总价之和与合计栏阿拉伯数字一致，中文大写金额与二者不一致"
+            elif contract_total == contract_total_uppercase:
+                expected = "请核对各分项总价，分项合计应与合计金额一致"
+                reason = "合计栏阿拉伯数字与中文大写金额一致，分项总价之和与二者不一致"
+            else:
+                expected = "三个金额互不一致，请人工核对正确金额"
+                reason = "分项总价之和、合计栏阿拉伯数字与中文大写金额均不一致，系统无法自动确定正确值"
+            errors.append(ReviewError(contract_total_location, "合计金额不一致", original, expected, reason))
+        elif actual != contract_total:
             expression = " + ".join(f"{value:.2f}" for value in line_totals)
             difference = abs(actual - contract_total)
             errors.append(ReviewError(
@@ -320,6 +346,8 @@ def review_docx(path: str | Path, filename: str | None = None) -> dict:
                 f"两者应一致（当前差额 {difference:.2f} 元）",
                 "所有有效商品行总价之和与最终合计金额不一致",
             ))
+    elif contract_total is not None and contract_total_uppercase is not None and contract_total_uppercase != contract_total:
+        _check_uppercase(contract_total_text or "", contract_total, contract_total_location, errors)
 
     payment_texts: list[tuple[str, str]] = []
     in_payment = False
