@@ -44,6 +44,26 @@ pytest -q
 
 ## Linux 部署
 
+在一台已安装 Docker 和 Docker Compose 的新服务器上，可以直接从 GitHub 克隆并启动：
+
+```bash
+git clone https://github.com/sxt916/contract-review.git
+cd contract-review
+cp .env.example deploy/.env
+# 如使用 TextIn 真实合同对比，请手动编辑 deploy/.env 填入配置和密钥
+docker compose -f deploy/docker-compose.standalone.yml up -d --build
+```
+
+启动后访问 `http://服务器IP:8000/`。如需改端口，可在启动命令前设置 `CONTRACT_REVIEW_PORT`。`deploy/.env` 不会被 Git 提交，仓库中不包含密钥。
+
+例如使用 18000 端口：
+
+```bash
+CONTRACT_REVIEW_PORT=18000 docker compose -f deploy/docker-compose.standalone.yml up -d --build
+```
+
+以下是现有网关或 systemd 环境的部署方式。
+
 参考 `deploy/contract-review-web.service` 和 `deploy/contract-review-worker.service`。安装项目后，将两个文件复制到 `/etc/systemd/system/`，按实际路径调整 `User`、`WorkingDirectory`、`EnvironmentFile` 与可执行文件路径，然后执行：
 
 ```bash
