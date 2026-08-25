@@ -100,19 +100,34 @@ def textin_status():
 @router.post("/amount-reviews", status_code=202)
 async def create_amount_reviews(files: list[UploadFile] = File(...)):
     settings = get_settings()
-    if not files or len(files) > settings.max_files_per_type:
-        raise HTTPException(400, f"一次须上传 1 至 {settings.max_files_per_type} 份文件")
+    if not files:
+        raise HTTPException(400, "请至少上传 1 份文件")
     stored: list[tuple[Path, str]] = []
+    rejected: list[dict[str, str]] = []
     try:
         for upload in files:
-            stored.append(await _store_upload(upload, ".docx"))
+            original_name = Path(upload.filename or "upload").name
+            if original_name.startswith(".") or original_name.startswith("~$"):
+                continue
+            filename = _safe_name(upload.filename)
+            if len(stored) >= settings.max_files_per_type:
+                rejected.append({"filename": filename, "reason": f"超过一次最多 {settings.max_files_per_type} 份的限制"})
+                continue
+            try:
+                stored.append(await _store_upload(upload, ".docx"))
+            except HTTPException as exc:
+                reason = str(exc.detail)
+                file_prefix = f"文件 {filename} "
+                if reason.startswith(file_prefix):
+                    reason = reason[len(file_prefix):]
+                rejected.append({"filename": filename, "reason": reason})
         tasks = []
         with connection() as conn:
             for path, filename in stored:
                 task_id = str(uuid.uuid4())
                 conn.execute("INSERT INTO amount_review_tasks (id, filename, status, created_at, temp_path) VALUES (?, ?, 'queued', ?, ?)", (task_id, filename, utc_now(), str(path)))
                 tasks.append({"id": task_id, "filename": filename, "status": "queued"})
-        return {"tasks": tasks}
+        return {"tasks": tasks, "rejected": rejected}
     except Exception:
         for path, _ in stored:
             path.unlink(missing_ok=True)
@@ -120,11 +135,48 @@ async def create_amount_reviews(files: list[UploadFile] = File(...)):
 
 
 @router.get("/amount-reviews")
-def list_amount_reviews(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
+def list_amount_reviews(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    filename: str | None = Query(None, max_length=180),
+    status: str | None = Query(None, max_length=30),
+    date_from: str | None = Query(None, max_length=30),
+    date_to: str | None = Query(None, max_length=30),
+    task_ids: str | None = Query(None, max_length=4000),
+):
     offset = (page - 1) * page_size
+    conditions: list[str] = []
+    params: list[object] = []
+    if filename:
+        conditions.append("filename LIKE ?")
+        params.append(f"%{filename.strip()}%")
+    if status:
+        allowed_statuses = {"queued", "processing", "passed", "failed_review", "parse_error"}
+        if status not in allowed_statuses:
+            raise HTTPException(400, "审核状态筛选值无效")
+        conditions.append("status = ?")
+        params.append(status)
+    if date_from:
+        conditions.append("created_at >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("created_at < datetime(?, '+1 day')")
+        params.append(date_to)
+    if task_ids is not None:
+        ids = [value for value in task_ids.split(",") if value]
+        if not ids:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+        if len(ids) > 100 or any(not re.fullmatch(r"[0-9a-fA-F-]{36}", value) for value in ids):
+            raise HTTPException(400, "任务 ID 筛选值无效")
+        conditions.append(f"id IN ({','.join('?' for _ in ids)})")
+        params.extend(ids)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     with connection() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM amount_review_tasks").fetchone()[0]
-        rows = conn.execute("SELECT * FROM amount_review_tasks ORDER BY created_at DESC LIMIT ? OFFSET ?", (page_size, offset)).fetchall()
+        total = conn.execute(f"SELECT COUNT(*) FROM amount_review_tasks{where}", params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM amount_review_tasks{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            [*params, page_size, offset],
+        ).fetchall()
     return {"items": [decode_task(row) for row in rows], "total": total, "page": page, "page_size": page_size}
 
 
