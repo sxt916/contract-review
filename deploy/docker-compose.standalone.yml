@@ -1,0 +1,50 @@
+{
+  "services": {
+    "contract-review-web": {
+      "build": {
+        "context": ".."
+      },
+      "image": "${CONTRACT_REVIEW_IMAGE:-contract-review:latest}",
+      "restart": "unless-stopped",
+      "env_file": [
+        ".env"
+      ],
+      "environment": {
+        "DATA_DIR": "/data"
+      },
+      "ports": [
+        "${CONTRACT_REVIEW_PORT:-8000}:8000"
+      ],
+      "volumes": [
+        "contract-review-data:/data"
+      ]
+    },
+    "contract-review-worker": {
+      "build": {
+        "context": ".."
+      },
+      "image": "${CONTRACT_REVIEW_IMAGE:-contract-review:latest}",
+      "restart": "unless-stopped",
+      "depends_on": [
+        "contract-review-web"
+      ],
+      "env_file": [
+        ".env"
+      ],
+      "environment": {
+        "DATA_DIR": "/data"
+      },
+      "command": [
+        "python",
+        "-m",
+        "contract_review.worker"
+      ],
+      "volumes": [
+        "contract-review-data:/data"
+      ]
+    }
+  },
+  "volumes": {
+    "contract-review-data": {}
+  }
+}

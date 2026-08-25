@@ -40,9 +40,29 @@ pytest -q
 
 ## TextIn 接入
 
-`contract_review/textin.py` 已实现创建任务、差异状态同步、20 分钟预览令牌和删除请求。设置 `COMPARISON_ADAPTER=textin` 使用真实服务；设置为 `mock` 可在不上传文件和不消耗额度的情况下测试本地流程。真实模式固定对扫描 PDF 使用 OCR。提交前可分别开关批注、页眉页脚（含页码）、印章、标点符号和水印的忽略处理；默认保留批注和印章，其余三项忽略。
+`contract_review/textin.py` 已实现创建任务、差异状态同步、20 分钟预览令牌和删除请求。设置 `COMPARISON_ADAPTER=textin` 使用真实服务；设置为 `mock` 可在不上传文件和不消耗额度的情况下测试本地流程。真实模式固定对扫描 PDF 使用 OCR。提交前可分别开关批注、页眉页脚（含页码）、印章、标点符号和水印的忽略处理；默认保留批注、印章和水印，忽略页眉页脚及标点符号。
 
 ## Linux 部署
+
+在一台已安装 Docker 和 Docker Compose 的新服务器上，可以直接从 GitHub 克隆并启动：
+
+```bash
+git clone https://github.com/sxt916/contract-review.git
+cd contract-review
+cp .env.example deploy/.env
+# 如使用 TextIn 真实合同对比，请手动编辑 deploy/.env 填入配置和密钥
+docker compose -f deploy/docker-compose.standalone.yml up -d --build
+```
+
+启动后访问 `http://服务器IP:8000/`。如需改端口，可在启动命令前设置 `CONTRACT_REVIEW_PORT`。`deploy/.env` 不会被 Git 提交，仓库中不包含密钥。
+
+例如使用 18000 端口：
+
+```bash
+CONTRACT_REVIEW_PORT=18000 docker compose -f deploy/docker-compose.standalone.yml up -d --build
+```
+
+以下是现有网关或 systemd 环境的部署方式。
 
 参考 `deploy/contract-review-web.service` 和 `deploy/contract-review-worker.service`。安装项目后，将两个文件复制到 `/etc/systemd/system/`，按实际路径调整 `User`、`WorkingDirectory`、`EnvironmentFile` 与可执行文件路径，然后执行：
 

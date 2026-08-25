@@ -33,7 +33,7 @@ DEFAULT_IGNORE_OPTIONS = {
     "headerfooter": True,
     "stamp": False,
     "symbols": True,
-    "watermark": True,
+    "watermark": False,
 }
 
 
