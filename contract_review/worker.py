@@ -228,11 +228,11 @@ def run_once() -> bool:
     # remains visibly `processing` until the next worker cycle, as before.
     results = (
         process_amount(),
-        process_combined_review(),
         sync_comparison(),
         sync_combined_comparison(),
         process_comparison(),
         process_combined_comparison(),
+        process_combined_review(),
     )
     return any(results)
 

@@ -183,8 +183,8 @@ def test_worker_cycle_attempts_every_queue_without_short_circuit(monkeypatch):
 
     assert worker.run_once()
     assert called == [
-        "amount", "combined-review", "sync-comparison", "sync-combined",
-        "comparison", "combined-comparison",
+        "amount", "sync-comparison", "sync-combined", "comparison",
+        "combined-comparison", "combined-review",
     ]
 
 
