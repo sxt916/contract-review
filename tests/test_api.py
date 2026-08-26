@@ -61,7 +61,7 @@ class _PageLinkParser(HTMLParser):
             self.current_href = None
 
 
-def test_home_page_offers_both_contract_modules():
+def test_home_page_offers_three_contract_workflows():
     with TestClient(app) as client:
         response = client.get("/")
 
@@ -69,19 +69,22 @@ def test_home_page_offers_both_contract_modules():
     parser = _PageLinkParser()
     parser.feed(response.text)
     links = {href: text for text, href in parser.links}
-    assert set(links) == {"comparison.html", "amount-review.html"}
+    assert set(links) == {"comparison.html", "amount-review.html", "contract-check.html"}
     assert "合同对比" in links["comparison.html"]
     assert "金额审核" in links["amount-review.html"]
+    assert "对比与审核" in links["contract-check.html"]
 
 
-def test_work_pages_offer_comparison_and_amount_review_navigation():
-    expected = [("合同对比", "comparison.html"), ("金额审核", "amount-review.html")]
+def test_work_pages_offer_three_workflow_navigation():
+    expected = [("合同对比", "comparison.html"), ("金额审核", "amount-review.html"), ("对比与审核", "contract-check.html")]
     with TestClient(app) as client:
         for path in (
             "/comparison.html",
             "/comparison-results.html",
             "/amount-review.html",
             "/amount-review-results.html",
+            "/contract-check.html",
+            "/contract-check-results.html",
         ):
             response = client.get(path)
             assert response.status_code == 200

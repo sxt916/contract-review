@@ -1,4 +1,4 @@
-const labels={queued:'等待处理',processing:'处理中',passed:'审核通过',failed_review:'审核未通过',parse_error:'文件解析失败',submitting:'正在提交',completed:'已完成',failed:'失败'};
+const labels={queued:'等待处理',processing:'处理中',passed:'审核通过',failed_review:'审核未通过',parse_error:'文件解析失败',submitting:'正在提交',completed:'已完成',failed:'失败',not_applicable:'—'};
 async function api(url,options={}){const requestUrl=url.startsWith('/')?`.${url}`:url;const response=await fetch(requestUrl,options);if(!response.ok){let detail='请求失败';try{const body=await response.json();detail=body.detail||detail}catch{}throw new Error(detail)}return response.status===204?null:response.json()}
 function esc(value){return String(value??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function formatTime(value){return value?new Date(value).toLocaleString('zh-CN',{hour12:false}):'—'}

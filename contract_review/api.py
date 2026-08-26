@@ -14,11 +14,15 @@ from pydantic import BaseModel
 from pypdf import PdfReader
 
 from .config import get_settings
-from .db import connection, decode_task, utc_now
+from .db import connection, decode_combined_task, decode_task, utc_now
 from .pairing import pair_files
 from .textin import DEFAULT_IGNORE_OPTIONS, get_adapter
 
 router = APIRouter(prefix="/api")
+
+COMPARISON_PUBLIC_COLUMNS = """id, contract_no, word_filename, pdf_filename, status,
+    textin_task_id, preview_url, error_message, created_at, completed_at,
+    word_temp_path, pdf_temp_path, similarity, difference_count, ignore_options_json"""
 
 
 class PairPreviewRequest(BaseModel):
@@ -266,6 +270,173 @@ async def create_comparisons(
         raise
 
 
+@router.post("/combined-checks", status_code=202)
+async def create_combined_checks(
+    word_files: list[UploadFile] = File(...),
+    pdf_files: list[UploadFile] | None = File(None),
+    pairs_json: str = Form("[]"),
+    unmatched_word_indices_json: str = Form("[]"),
+    ignore_options_json: str = Form("{}"),
+):
+    settings = get_settings()
+    pdf_files = pdf_files or []
+    if not word_files:
+        raise HTTPException(400, "请至少上传 1 份 Word 合同")
+    if len(word_files) > settings.max_files_per_type or len(pdf_files) > settings.max_files_per_type:
+        raise HTTPException(400, f"每类文件最多 {settings.max_files_per_type} 份")
+    try:
+        pairs = json.loads(pairs_json)
+        unmatched_word_indices = json.loads(unmatched_word_indices_json)
+        supplied_options = json.loads(ignore_options_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "任务数据格式错误") from exc
+    if not isinstance(pairs, list) or not isinstance(unmatched_word_indices, list):
+        raise HTTPException(400, "配对或未配对数据格式错误")
+    if not isinstance(supplied_options, dict) or any(
+        key not in DEFAULT_IGNORE_OPTIONS or not isinstance(value, bool)
+        for key, value in supplied_options.items()
+    ):
+        raise HTTPException(400, "忽略选项无效")
+    ignore_options = {**DEFAULT_IGNORE_OPTIONS, **supplied_options}
+
+    seen_words: set[int] = set()
+    seen_pdfs: set[int] = set()
+    for pair in pairs:
+        if not isinstance(pair, dict):
+            raise HTTPException(400, "配对索引无效")
+        word_index, pdf_index = pair.get("word_index"), pair.get("pdf_index")
+        if (
+            not isinstance(word_index, int) or not isinstance(pdf_index, int)
+            or word_index < 0 or word_index >= len(word_files)
+            or pdf_index < 0 or pdf_index >= len(pdf_files)
+            or word_index in seen_words or pdf_index in seen_pdfs
+        ):
+            raise HTTPException(400, "配对索引无效或文件被重复使用")
+        seen_words.add(word_index)
+        seen_pdfs.add(pdf_index)
+    if any(
+        not isinstance(index, int) or index < 0 or index >= len(word_files) or index in seen_words
+        for index in unmatched_word_indices
+    ) or len(set(unmatched_word_indices)) != len(unmatched_word_indices):
+        raise HTTPException(400, "未配对 Word 索引无效或重复")
+    seen_words.update(unmatched_word_indices)
+    if seen_words != set(range(len(word_files))):
+        raise HTTPException(400, "每份 Word 必须且只能进入一个对比或审核任务")
+
+    stored_words: list[tuple[Path, str]] = []
+    stored_pdfs: list[tuple[Path, str]] = []
+    try:
+        for upload in word_files:
+            stored_words.append(await _store_upload(upload, ".docx"))
+        for upload in pdf_files:
+            stored_pdfs.append(await _store_upload(upload, ".pdf"))
+        task_ids: list[str] = []
+        used_pdf_paths: set[Path] = set()
+        with connection() as conn:
+            for pair in pairs:
+                word_path, word_name = stored_words[pair["word_index"]]
+                pdf_path, pdf_name = stored_pdfs[pair["pdf_index"]]
+                used_pdf_paths.add(pdf_path)
+                task_id = str(uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO combined_check_tasks (
+                        id, contract_no, word_filename, pdf_filename, comparison_status,
+                        review_status, created_at, word_temp_path, pdf_temp_path, ignore_options_json
+                    ) VALUES (?, ?, ?, ?, 'queued', 'queued', ?, ?, ?, ?)""",
+                    (
+                        task_id, pair.get("contract_no"), word_name, pdf_name, utc_now(),
+                        str(word_path), str(pdf_path), json.dumps(ignore_options),
+                    ),
+                )
+                task_ids.append(task_id)
+            for word_index in unmatched_word_indices:
+                word_path, word_name = stored_words[word_index]
+                task_id = str(uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO combined_check_tasks (
+                        id, word_filename, comparison_status, review_status, created_at,
+                        word_temp_path, ignore_options_json
+                    ) VALUES (?, ?, 'not_applicable', 'queued', ?, ?, ?)""",
+                    (task_id, word_name, utc_now(), str(word_path), json.dumps(ignore_options)),
+                )
+                task_ids.append(task_id)
+        for path, _ in stored_pdfs:
+            if path not in used_pdf_paths:
+                path.unlink(missing_ok=True)
+        return {"task_ids": task_ids}
+    except Exception:
+        for path, _ in [*stored_words, *stored_pdfs]:
+            path.unlink(missing_ok=True)
+        raise
+
+
+@router.get("/combined-checks")
+def list_combined_checks(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    filename: str | None = Query(None, max_length=180),
+    date_from: str | None = Query(None, max_length=30),
+    date_to: str | None = Query(None, max_length=30),
+    task_ids: str | None = Query(None, max_length=4000),
+):
+    offset = (page - 1) * page_size
+    conditions: list[str] = []
+    params: list[object] = []
+    if filename:
+        conditions.append("(word_filename LIKE ? OR pdf_filename LIKE ?)")
+        keyword = f"%{filename.strip()}%"
+        params.extend((keyword, keyword))
+    if date_from:
+        conditions.append("created_at >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("created_at < datetime(?, '+1 day')")
+        params.append(date_to)
+    if task_ids is not None:
+        ids = [value for value in task_ids.split(",") if value]
+        if not ids:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size}
+        if len(ids) > 100 or any(not re.fullmatch(r"[0-9a-fA-F-]{36}", value) for value in ids):
+            raise HTTPException(400, "任务 ID 筛选值无效")
+        conditions.append(f"id IN ({','.join('?' for _ in ids)})")
+        params.extend(ids)
+    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+    with connection() as conn:
+        total = conn.execute(f"SELECT COUNT(*) FROM combined_check_tasks{where}", params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT * FROM combined_check_tasks{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            [*params, page_size, offset],
+        ).fetchall()
+    return {"items": [decode_combined_task(row) for row in rows], "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/combined-checks/{task_id}/preview")
+def combined_check_preview(task_id: str, request: Request):
+    with connection() as conn:
+        row = conn.execute(
+            "SELECT textin_task_id, preview_url FROM combined_check_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "对比与审核任务不存在")
+    if not row["textin_task_id"]:
+        raise HTTPException(409, "该任务没有可用的对比预览")
+    return {"preview_url": get_adapter().preview(row["textin_task_id"], row["preview_url"], str(request.base_url))}
+
+
+@router.delete("/combined-checks/{task_id}", status_code=204)
+def delete_combined_check(task_id: str):
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM combined_check_tasks WHERE id = ?", (task_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "对比与审核任务不存在")
+        if row["textin_task_id"]:
+            get_adapter().delete(row["textin_task_id"])
+        conn.execute("DELETE FROM combined_check_tasks WHERE id = ?", (task_id,))
+    for field in ("word_temp_path", "pdf_temp_path"):
+        if row[field]:
+            Path(row[field]).unlink(missing_ok=True)
+
+
 @router.get("/comparisons")
 def list_comparisons(
     page: int = Query(1, ge=1),
@@ -307,7 +478,7 @@ def list_comparisons(
     with connection() as conn:
         total = conn.execute(f"SELECT COUNT(*) FROM comparison_submissions{where}", params).fetchone()[0]
         rows = conn.execute(
-            f"SELECT * FROM comparison_submissions{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT {COMPARISON_PUBLIC_COLUMNS} FROM comparison_submissions{where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             [*params, page_size, offset],
         ).fetchall()
     return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": page_size}
