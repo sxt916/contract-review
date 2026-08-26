@@ -96,6 +96,8 @@ def test_combined_submission_allows_only_unmatched_word_files():
         ('[{"word_index":0,"pdf_index":0}]', "[0]"),
         ('[{"word_index":1,"pdf_index":0}]', "[0]"),
         ('[{"word_index":0,"pdf_index":1}]', "[]"),
+        ('[{"word_index":true,"pdf_index":0}]', "[]"),
+        ("[]", "[false]"),
     ],
 )
 def test_combined_submission_rejects_duplicate_or_out_of_range_indexes(pairs_json, unmatched_json):
@@ -163,6 +165,29 @@ def test_combined_review_finishes_before_remote_comparison():
         assert completed["comparison_status"] == "completed"
 
 
+def test_worker_cycle_attempts_every_queue_without_short_circuit(monkeypatch):
+    called = []
+
+    def handler(name, result):
+        def run():
+            called.append(name)
+            return result
+        return run
+
+    monkeypatch.setattr(worker, "process_amount", handler("amount", True))
+    monkeypatch.setattr(worker, "process_comparison", handler("comparison", True))
+    monkeypatch.setattr(worker, "process_combined_comparison", handler("combined-comparison", True))
+    monkeypatch.setattr(worker, "process_combined_review", handler("combined-review", True))
+    monkeypatch.setattr(worker, "sync_comparison", handler("sync-comparison", True))
+    monkeypatch.setattr(worker, "sync_combined_comparison", handler("sync-combined", True))
+
+    assert worker.run_once()
+    assert called == [
+        "amount", "combined-review", "sync-comparison", "sync-combined",
+        "comparison", "combined-comparison",
+    ]
+
+
 def test_unmatched_word_is_reviewed_without_comparison():
     with TestClient(app) as client:
         task_id = submit_combined_fixture(client, include_pdf=False)
@@ -216,4 +241,48 @@ def test_init_db_migrates_legacy_auto_review_tasks(tmp_path, monkeypatch):
     assert migrated["comparison_status"] == "queued"
     assert migrated["review_status"] == "queued"
     assert migrated["word_temp_path"] == "/tmp/legacy.docx"
+    assert old is None
+
+
+def test_legacy_migration_reconciles_existing_destination_row(tmp_path, monkeypatch):
+    legacy_data = tmp_path / "legacy-collision"
+    legacy_data.mkdir()
+    database = legacy_data / "contract_review.sqlite3"
+    monkeypatch.setenv("DATA_DIR", str(legacy_data))
+    get_settings.cache_clear()
+    init_db()
+    with sqlite3.connect(database) as conn:
+        conn.execute("ALTER TABLE comparison_submissions ADD COLUMN auto_review INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE comparison_submissions ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'")
+        conn.execute("ALTER TABLE comparison_submissions ADD COLUMN review_errors_json TEXT NOT NULL DEFAULT '[]'")
+        conn.execute("ALTER TABLE comparison_submissions ADD COLUMN review_summary_json TEXT NOT NULL DEFAULT '{}'")
+        conn.execute("ALTER TABLE comparison_submissions ADD COLUMN review_parser_version TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE comparison_submissions ADD COLUMN review_completed_at TEXT")
+        conn.execute(
+            """INSERT INTO comparison_submissions (
+                id, word_filename, pdf_filename, status, created_at, word_temp_path,
+                pdf_temp_path, auto_review, review_status
+            ) VALUES ('22222222-2222-2222-2222-222222222222', 'legacy.docx', 'legacy.pdf',
+                      'queued', '2026-08-26T00:00:00+00:00', '/tmp/legacy.docx',
+                      '/tmp/legacy.pdf', 1, 'pending')"""
+        )
+        conn.execute(
+            """INSERT INTO combined_check_tasks (
+                id, word_filename, pdf_filename, comparison_status, review_status, created_at
+            ) VALUES ('22222222-2222-2222-2222-222222222222', 'stale.docx', 'stale.pdf',
+                      'failed', 'parse_error', '2026-08-25T00:00:00+00:00')"""
+        )
+
+    init_db()
+
+    with connection() as conn:
+        migrated = conn.execute(
+            "SELECT * FROM combined_check_tasks WHERE id = '22222222-2222-2222-2222-222222222222'"
+        ).fetchone()
+        old = conn.execute(
+            "SELECT * FROM comparison_submissions WHERE id = '22222222-2222-2222-2222-222222222222'"
+        ).fetchone()
+    assert migrated["word_filename"] == "legacy.docx"
+    assert migrated["comparison_status"] == "queued"
+    assert migrated["review_status"] == "queued"
     assert old is None

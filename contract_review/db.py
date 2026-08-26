@@ -108,13 +108,33 @@ def _migrate_legacy_combined_tasks(conn: sqlite3.Connection, comparison_columns:
         legacy_review_status = task.get("review_status") or "pending"
         review_status = "queued" if legacy_review_status in {"pending", "reviewing", "processing"} else legacy_review_status
         conn.execute(
-            """INSERT OR IGNORE INTO combined_check_tasks (
+            """INSERT INTO combined_check_tasks (
                 id, contract_no, word_filename, pdf_filename, comparison_status, review_status,
                 textin_task_id, preview_url, comparison_error, created_at,
                 comparison_completed_at, review_completed_at, word_temp_path, pdf_temp_path,
                 similarity, difference_count, ignore_options_json, review_errors_json,
                 review_summary_json, review_parser_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                contract_no=excluded.contract_no,
+                word_filename=excluded.word_filename,
+                pdf_filename=excluded.pdf_filename,
+                comparison_status=excluded.comparison_status,
+                review_status=excluded.review_status,
+                textin_task_id=excluded.textin_task_id,
+                preview_url=excluded.preview_url,
+                comparison_error=excluded.comparison_error,
+                created_at=excluded.created_at,
+                comparison_completed_at=excluded.comparison_completed_at,
+                review_completed_at=excluded.review_completed_at,
+                word_temp_path=excluded.word_temp_path,
+                pdf_temp_path=excluded.pdf_temp_path,
+                similarity=excluded.similarity,
+                difference_count=excluded.difference_count,
+                ignore_options_json=excluded.ignore_options_json,
+                review_errors_json=excluded.review_errors_json,
+                review_summary_json=excluded.review_summary_json,
+                review_parser_version=excluded.review_parser_version""",
             (
                 task["id"], task.get("contract_no"), task["word_filename"], task.get("pdf_filename") or None,
                 task["status"], review_status, task.get("textin_task_id"),

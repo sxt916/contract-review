@@ -222,14 +222,19 @@ def sync_combined_comparison() -> bool:
 
 
 def run_once() -> bool:
-    return (
-        process_amount()
-        or process_comparison()
-        or process_combined_comparison()
-        or process_combined_review()
-        or sync_comparison()
-        or sync_combined_comparison()
+    # Give every independent queue one turn per cycle. A short-circuiting `or`
+    # would let a busy comparison queue starve the combined Word review queue.
+    # Sync before submitting new comparisons so a newly created remote task
+    # remains visibly `processing` until the next worker cycle, as before.
+    results = (
+        process_amount(),
+        process_combined_review(),
+        sync_comparison(),
+        sync_combined_comparison(),
+        process_comparison(),
+        process_combined_comparison(),
     )
+    return any(results)
 
 
 def run() -> None:

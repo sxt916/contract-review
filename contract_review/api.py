@@ -306,7 +306,7 @@ async def create_combined_checks(
             raise HTTPException(400, "配对索引无效")
         word_index, pdf_index = pair.get("word_index"), pair.get("pdf_index")
         if (
-            not isinstance(word_index, int) or not isinstance(pdf_index, int)
+            type(word_index) is not int or type(pdf_index) is not int
             or word_index < 0 or word_index >= len(word_files)
             or pdf_index < 0 or pdf_index >= len(pdf_files)
             or word_index in seen_words or pdf_index in seen_pdfs
@@ -315,7 +315,7 @@ async def create_combined_checks(
         seen_words.add(word_index)
         seen_pdfs.add(pdf_index)
     if any(
-        not isinstance(index, int) or index < 0 or index >= len(word_files) or index in seen_words
+        type(index) is not int or index < 0 or index >= len(word_files) or index in seen_words
         for index in unmatched_word_indices
     ) or len(set(unmatched_word_indices)) != len(unmatched_word_indices):
         raise HTTPException(400, "未配对 Word 索引无效或重复")
