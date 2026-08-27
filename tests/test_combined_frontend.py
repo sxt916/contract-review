@@ -211,13 +211,63 @@ process.stdout.write(html);
     )
     html = completed.stdout
 
-    assert "2条未通过" in html
+    assert "2条未通过原因" in html
     assert "查看 2 条未通过原因" not in html
     assert 'class="review-detail-row"' in html
     assert f'colspan="{colspan}"' in html
     assert "review-chevron" in html
     assert 'aria-controls="review-detail-task-1"' in html
     assert 'class="review-chevron" aria-hidden="true"' in html
+
+
+@pytest.mark.parametrize(
+    "script_name,colspan",
+    [("amount-review.js", 6), ("amount-review-results.js", 7)],
+)
+def test_amount_review_failure_and_basis_render_as_full_width_rows(script_name, colspan):
+    if not NODE:
+        pytest.skip("Node.js is required for frontend validation tests")
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const elements = new Map();
+function element(selector) {
+  if (!elements.has(selector)) elements.set(selector, {
+    innerHTML:'', textContent:'', className:'', disabled:false, checked:false, hidden:false,
+    value:'', addEventListener(){}, classList:{add(){},remove(){},contains(){return false},toggle(){}},
+    reset(){}, querySelectorAll(){return []}, setAttribute(){},
+  });
+  return elements.get(selector);
+}
+const context = {
+  document:{body:{style:{}},querySelector:element,querySelectorAll(){return []},addEventListener(){}},
+  sessionStorage:{getItem(){return null},setItem(){}},
+  labels:{failed_review:'审核未通过',passed:'审核通过'},setMessage(){},esc(value){return String(value)},setupDropzone(){},
+  api:async()=>({items:[],total:0,page:1,page_size:20}),formatTime(){return 'time'},
+  setTimeout(){},confirm(){return true},URLSearchParams,FormData:function(){this.append=()=>{}},
+};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+const failed={id:'failed-1',filename:'bad.docx',contract_no:'NPA-1',status:'failed_review',created_at:'2026-08-27T00:00:00Z',errors:[
+  {location:'第一条',error_type:'金额错误',original:'100',expected:'200',reason:'不一致'},
+  {location:'第二条',error_type:'金额错误',original:'300',expected:'400',reason:'不一致'},
+],summary:{checks:[]}};
+const passed={id:'passed-1',filename:'good.docx',contract_no:'NPA-2',status:'passed',created_at:'2026-08-27T00:00:00Z',errors:[],summary:{checks:['金额一致','大写一致']}};
+process.stdout.write(context.taskRows([failed,passed],1,20));
+"""
+    completed = subprocess.run(
+        [NODE, "-e", harness, str(STATIC / script_name)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    html = completed.stdout
+
+    assert "2条未通过原因" in html
+    assert "查看审核依据" in html
+    assert html.count('class="review-detail-row"') == 2
+    assert html.count(f'colspan="{colspan}"') == 2
+    assert "issue-details" not in html
 
 
 @pytest.mark.parametrize("script_name", ["contract-check.js", "contract-check-results.js"])
