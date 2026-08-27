@@ -72,6 +72,17 @@ th { color:#64748b; font-weight:600; background:#fafcff; }
 .file-choice input { display:block; flex:0 0 auto; margin-top:2px; accent-color:var(--blue); }
 .file-choice span { min-width:0; overflow-wrap:anywhere; }
 .review-result { min-width:220px; }
+.review-toggle { display:inline-flex; align-items:center; gap:7px; padding:5px 10px; border:0; border-radius:18px; color:var(--bad); background:#fff0f0; font:inherit; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.review-chevron { display:inline-block; font-style:normal; font-size:18px; line-height:12px; transition:transform .18s ease; }
+.review-toggle[aria-expanded="true"] .review-chevron { transform:rotate(90deg); }
+.review-detail-row[hidden] { display:none; }
+.comparison-table .review-detail-row>td { height:auto; padding:0 10px 18px; border-bottom:1px solid #dfe7f2; background:#fff; }
+.review-detail-panel { width:100%; box-sizing:border-box; padding:18px; border:1px solid #f0caca; border-left:4px solid var(--bad); border-radius:10px; background:#fffafa; }
+.review-detail-heading { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.review-detail-heading strong { color:var(--bad); }
+.review-detail-heading span { color:var(--muted); font-size:12px; }
+.review-error-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:12px; }
+.review-error-grid .error-box { min-width:0; margin:0; border:1px solid #f2dede; border-left:3px solid var(--bad); }
 .pair-list { margin-top:18px; }
 .pair-row { display:grid; grid-template-columns:1fr 42px 1fr 120px; align-items:center; gap:10px; padding:10px; border-bottom:1px solid #edf1f6; font-size:13px; }
 .pair-row .arrow { text-align:center; color:var(--blue); }
