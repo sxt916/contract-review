@@ -18,27 +18,32 @@ class InputParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.inputs: dict[str, dict[str, str | None]] = {}
-        self.file_labels: list[tuple[str | None, str]] = []
-        self._label_for: str | None = None
-        self._label_text: list[str] = []
+        self.picker_buttons: list[tuple[str | None, str, str | None]] = []
+        self._picker_target: str | None = None
+        self._picker_type: str | None = None
+        self._picker_text: list[str] = []
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
         if tag == "input" and attributes.get("id"):
             self.inputs[attributes["id"]] = attributes
-        if tag == "label" and attributes.get("for"):
-            self._label_for = attributes["for"]
-            self._label_text = []
+        if tag == "button" and attributes.get("data-file-picker"):
+            self._picker_target = attributes["data-file-picker"]
+            self._picker_type = attributes.get("type")
+            self._picker_text = []
 
     def handle_data(self, data):
-        if self._label_for:
-            self._label_text.append(data)
+        if self._picker_target:
+            self._picker_text.append(data)
 
     def handle_endtag(self, tag):
-        if tag == "label" and self._label_for:
-            self.file_labels.append((self._label_for, "".join(self._label_text).strip()))
-            self._label_for = None
-            self._label_text = []
+        if tag == "button" and self._picker_target:
+            self.picker_buttons.append(
+                (self._picker_target, "".join(self._picker_text).strip(), self._picker_type)
+            )
+            self._picker_target = None
+            self._picker_type = None
+            self._picker_text = []
 
 
 def test_combined_page_has_independent_file_and_folder_pickers():
@@ -78,7 +83,8 @@ def test_every_upload_area_exposes_file_and_folder_buttons(page, expected_labels
     parser = InputParser()
     parser.feed((STATIC / page).read_text())
 
-    assert expected_labels <= set(parser.file_labels)
+    expected_buttons = {(target, text, "button") for target, text in expected_labels}
+    assert expected_buttons <= set(parser.picker_buttons)
 
 
 def run_selection_scenario() -> dict:
@@ -210,6 +216,47 @@ process.stdout.write(html);
     assert 'class="review-detail-row"' in html
     assert f'colspan="{colspan}"' in html
     assert "review-chevron" in html
+    assert 'aria-controls="review-detail-task-1"' in html
+    assert 'class="review-chevron" aria-hidden="true"' in html
+
+
+@pytest.mark.parametrize("script_name", ["contract-check.js", "contract-check-results.js"])
+def test_parse_error_keeps_parse_failure_label(script_name):
+    if not NODE:
+        pytest.skip("Node.js is required for frontend validation tests")
+    harness = r"""
+const fs = require('fs');
+const vm = require('vm');
+const elements = new Map();
+function element(selector) {
+  if (!elements.has(selector)) elements.set(selector, {
+    innerHTML:'', textContent:'', className:'', disabled:false, checked:false, hidden:false,
+    addEventListener(){}, classList:{add(){},remove(){},contains(){return false}},
+    reset(){}, querySelectorAll(){return []}, setAttribute(){},
+  });
+  return elements.get(selector);
+}
+const context = {
+  document:{body:{style:{}},querySelector:element,querySelectorAll(){return []},addEventListener(){}},
+  sessionStorage:{getItem(){return null},setItem(){}},
+  labels:{parse_error:'文件解析失败'},setMessage(){},esc(value){return String(value)},
+  api:async()=>({items:[],total:0,page:1,page_size:20}),formatTime(){return 'time'},
+  setTimeout(){},confirm(){return true},URLSearchParams,FormData:function(){this.append=()=>{}},
+};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+const task={id:'parse-1',word_filename:'bad.docx',pdf_filename:null,comparison_status:'not_applicable',review_status:'parse_error',created_at:'2026-08-27T00:00:00Z',review_errors:[{location:'文件',error_type:'文件解析失败',original:'bad.docx',expected:'有效 DOCX',reason:'文件损坏'}]};
+process.stdout.write(context.taskRows([task],1,20));
+"""
+    completed = subprocess.run(
+        [NODE, "-e", harness, str(STATIC / script_name)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "文件解析失败" in completed.stdout
+    assert "1条未通过" not in completed.stdout
 
 
 def test_dropzone_does_not_reopen_file_input_when_picker_button_is_clicked():
@@ -227,7 +274,7 @@ const zone = {
 const input = {
   files:[], click(){inputClicks++;}, addEventListener(){},
 };
-const context = {document:{querySelector(){return {textContent:'',classList:{toggle(){}}};}}};
+const context = {document:{querySelector(){return {textContent:'',classList:{toggle(){}}};},addEventListener(){}}};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), context);
 context.setupDropzone(zone,input,()=>{});
